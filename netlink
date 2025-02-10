@@ -1,0 +1,41 @@
+1. 在使用netlink删配ip时，需要对整块内存初始化，否则可能出现-22的报错
+example:
+    socklen_t addr_len;
+    struct sockaddr_nl snl;
+    int sock_flags = flags;
+    char nl_buf[4096];
+
+    memset(nl_buf, 0, 4096); // very import
+    nl->fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+    if (nl->fd < 0)
+    {
+        log_message(LOG_INFO, "Netlink: Cannot open netlink socket : (%s)",
+                    strerror(errno));
+        return;
+    }
+
+    memset(&snl, 0, sizeof(snl));
+    snl.nl_family = AF_NETLINK;
+
+    ret = bind(nl->fd, PTR_CAST(struct sockaddr, &snl), sizeof(snl));
+    if (ret < 0)
+    {
+        log_message(LOG_INFO, "Netlink: Cannot bind netlink socket : (%s)",
+                    strerror(errno));
+        close(nl->fd);
+        nl->fd = -1;
+        return;
+    }
+
+    struct nlmsghdr *nlh = (struct nlmsghdr *)nl_buf;
+    nlh->nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddmsg));
+    nlh->nlmsg_type = RTM_NEWADDR;
+    nlh->nlmsg_falgs = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+
+    struct ifaddmsg *ifa = NLMSG_DATA(nlh);
+    ifa->ifa_famliy = family;
+    ifa->ifa_prefixlen = ifa_prefixlen;
+    ifa->ifa_index = if_nametoindex(ifname);
+    // 如果不memset，ifa_flags和ifa_scope可能是随机值，导致返回-22
+    //ifa->ifa_flags = 0;
+    //ifa->ifa_scope = 0;
